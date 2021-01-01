@@ -6,7 +6,6 @@ export default (
 	{
 		mode = "preferAll", // preferLatest, preferAll, preferEarlier
 		reset = false,
-		storeKeyName,
 		CRUDMode = "create", // create, update, delete
 		multipleResources = false,
 		entityAdapter,
@@ -20,31 +19,29 @@ export default (
 		(arg, thunkAPI) =>
 			Promise.resolve(payloadCreator(arg, thunkAPI)).finally((_) => {
 				if (reset)
-					setTimeout(
-						() => thunkAPI.dispatch(actions.reset(arg, thunkAPI.requestId)),
-						reset * 1000
-					);
+					setTimeout(() => thunkAPI.dispatch(actions.reset(arg, thunkAPI.requestId)), reset * 1000);
 				return _;
 			}),
 		options
 	);
-	const getNode = (state, resourceID) => {
-		if (resourceID && multipleResources) {
-			return [state[key], resourceID];
+	const getNode = (state, resourceId) => {
+		if (resourceId && multipleResources) {
+			state[key] = state[key] || {};
+			return [state[key], resourceId];
 		}
 		return [state, key];
 	};
-	intermediate.toString = () => key
+	intermediate.toString = () => key;
 	intermediate.reducers = {
 		[intermediate.pending]: (
 			state,
 			{
 				meta: {
-					arg: { resourceID },
+					arg: { resourceId },
 				},
 			}
 		) => {
-			const [node, key] = getNode(state, resourceID);
+			const [node, key] = getNode(state, resourceId);
 			node[key] = { pending: true };
 		},
 		[intermediate.rejected]: (
@@ -52,43 +49,48 @@ export default (
 			{
 				error,
 				meta: {
-					arg: { resourceID },
+					arg: { resourceId },
 				},
 			}
 		) => {
-			const [node, key] = getNode(state, resourceID);
-			node[key] = error;
+			const [node, key] = getNode(state, resourceId);
+			node[key] = { error };
 		},
 		[intermediate.reset]: (
 			state,
 			{
 				meta: {
-					arg: { resourceID },
+					arg: { resourceId },
 				},
 			}
 		) => {
-			const [node, key] = getNode(state, resourceID);
+			const [node, key] = getNode(state, resourceId);
 			node[key] = {};
 		},
 	};
 
+	// Fulfilled Handler needs to be different
 	if (CRUDMode === "create") {
 		intermediate.reducers[intermediate.fulfilled] = (
 			state,
 			{
 				payload,
 				meta: {
-					arg: { resourceID, metaData = {}, body = {} },
+					arg: { resourceId, metaData = {}, body = {} },
 				},
 			}
 		) => {
-			const [node, key] = getNode(state, resourceID);
-			node[key] = payload;
-			entityAdapter.addOne(state, {
+			const [node, key] = getNode(state, resourceId);
+			const entity = {
 				...body,
 				...metaData,
 				...payload,
-			});
+			};
+			node[key] = {
+				fulfilled: true,
+				entity,
+			};
+			entityAdapter && entityAdapter.addOne(state, entity);
 		};
 	} else if (CRUDMode === "update") {
 		intermediate.reducers[intermediate.fulfilled] = (
@@ -96,31 +98,42 @@ export default (
 			{
 				payload,
 				meta: {
-					arg: { resourceID, metaData = {}, body = {} },
+					arg: { resourceId, metaData = {}, body = {} },
 				},
 			}
 		) => {
-			const [node, key] = getNode(state, resourceID);
-			node[key] = payload;
-			entityAdapter.updateOne(state, {
+			const [node, key] = getNode(state, resourceId);
+			const previousObject = entityAdapter
+				? entityAdapter.getSelectors().selectById(state, resourceId)
+				: node[key];	// single value in store
+			const entity = {
+				...previousObject,
 				...body,
 				...metaData,
 				...payload,
-			});
+			};
+			node[key] = {
+				fulfilled: true,
+				entity,
+			};
+			entityAdapter && entityAdapter.updateOne(state, entity);
 		};
-	} else if (CRUDMode === "delete") {
+	} else if (CRUDMode === "remove") {
 		intermediate.reducers[intermediate.fulfilled] = (
 			state,
 			{
 				payload,
 				meta: {
-					arg: { resourceID },
+					arg: { resourceId },
 				},
 			}
 		) => {
-			const [node, key] = getNode(state, resourceID);
-			node[key] = payload;
-			entityAdapter.removeOne(state, resourceID);
+			const [node, key] = getNode(state, resourceId);
+			node[key] = {
+				fulfilled: true,
+				payload,
+			};
+			entityAdapter && entityAdapter.removeOne(state, resourceId);
 		};
 	} else if (CRUDMode === "readAll") {
 		intermediate.reducers[intermediate.fulfilled] = (
@@ -128,13 +141,16 @@ export default (
 			{
 				payload,
 				meta: {
-					arg: { resourceID, metaData = {} },
+					arg: { resourceId, metaData = {} },
 				},
 			}
 		) => {
-			const [node, key] = getNode(state, resourceID);
-			node[key] = payload;
-			entityAdapter.setAll(state, payload.entities);
+			const [node, key] = getNode(state, resourceId);
+			node[key] = {
+				fulfilled: true,
+				payload: payload.metaData,
+			};
+			entityAdapter && entityAdapter.setAll(state, payload.entities);
 		};
 	} else if (CRUDMode === "readOne") {
 		intermediate.reducers[intermediate.fulfilled] = (
@@ -142,21 +158,41 @@ export default (
 			{
 				payload,
 				meta: {
-					arg: { resourceID, metaData = {}, body = {} },
+					arg: { resourceId, metaData = {}, body = {} },
 				},
 			}
 		) => {
-			const [node, key] = getNode(state, resourceID);
-			node[key] = payload;
-			state.selectedEntityId = entityAdapter.selectId(payload);
-			entityAdapter.addOne(state, {
+			const [node, key] = getNode(state, resourceId);
+			const entity = {
 				...body,
 				...metaData,
 				...payload,
-			});
+			};
+			node[key] = {
+				fulfilled: true,
+				entity,
+			};
+			if (!entityAdapter) return;
+			state.selectedEntityId = entityAdapter.selectId(payload);
+			entityAdapter.addOne(state, entity);
+		};
+	} else if (CRUDMode === "readHeader") {
+		intermediate.reducers[intermediate.fulfilled] = (
+			state,
+			{
+				payload,
+				meta: {
+					arg: { resourceId, metaData = {}, body = {} },
+				},
+			}
+		) => {
+			const [node, key] = getNode(state, resourceId);
+			node[key] = {
+				fulfilled: true,
+			};
 		};
 	}
-	return intermediate
+	return intermediate;
 };
 
 const asyncAction = (type) => {
@@ -172,10 +208,3 @@ const asyncAction = (type) => {
 		}),
 	};
 };
-const snakeToCamel = (str) =>
-	str
-		.toLowerCase()
-		.replace(/.+__/, "")
-		.replace(/([-_][a-z])/g, (group) =>
-			group.toUpperCase().replace("-", "").replace("_", "")
-		);
