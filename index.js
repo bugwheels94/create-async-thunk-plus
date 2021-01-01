@@ -76,11 +76,11 @@ export default (
 			{
 				payload,
 				meta: {
-					arg: { resourceId, metaData = {}, body = {} },
+					arg: { metaData = {}, body = {} } = {},
 				},
 			}
 		) => {
-			const [node, key] = getNode(state, resourceId);
+			const [node, key] = getNode(state);
 			const entity = {
 				...body,
 				...metaData,
@@ -98,7 +98,7 @@ export default (
 			{
 				payload,
 				meta: {
-					arg: { resourceId, metaData = {}, body = {} },
+					arg: { resourceId, metaData = {}, body = {} } = {},
 				},
 			}
 		) => {
@@ -140,12 +140,9 @@ export default (
 			state,
 			{
 				payload,
-				meta: {
-					arg: { resourceId, metaData = {} },
-				},
 			}
 		) => {
-			const [node, key] = getNode(state, resourceId);
+			const [node, key] = getNode(state);
 			node[key] = {
 				fulfilled: true,
 				payload: payload.metaData,
