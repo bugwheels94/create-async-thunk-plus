@@ -9,11 +9,13 @@ export default (
 		CRUDMode = "create", // create, update, delete
 		multipleResources = false,
 		entityAdapter,
+		selectId, // if entityAdapter is missing
 		...options
-	}
+	} = {}
 ) => {
 	const actions = asyncAction(type);
 	const key = `${CRUDMode}Tracker${type}`;
+	let idSelector = selectId || entityAdapter && entityAdapter.selectId || (() => "id");
 	const intermediate = createAsyncThunk(
 		type,
 		(arg, thunkAPI) =>
@@ -24,62 +26,34 @@ export default (
 			}),
 		options
 	);
-	const getNode = (state, resourceId) => {
-		if (resourceId && multipleResources) {
+	const getNode = (state, thunkArgument) => {
+		if (multipleResources) {
 			state[key] = state[key] || {};
-			return [state[key], resourceId];
+			const id = idSelector(thunkArgument);
+			return [state[key], id];
 		}
 		return [state, key];
 	};
 	intermediate.toString = () => key;
 	intermediate.reducers = {
-		[intermediate.pending]: (
-			state,
-			{
-				meta: {
-					arg: { resourceId },
-				},
-			}
-		) => {
-			const [node, key] = getNode(state, resourceId);
+		[intermediate.pending]: (state, { meta: { arg } }) => {
+			const [node, key] = getNode(state, arg);
 			node[key] = { pending: true };
 		},
-		[intermediate.rejected]: (
-			state,
-			{
-				error,
-				meta: {
-					arg: { resourceId },
-				},
-			}
-		) => {
-			const [node, key] = getNode(state, resourceId);
+		[intermediate.rejected]: (state, { error, meta: { arg = {} } }) => {
+			const [node, key] = getNode(state, arg);
 			node[key] = { error };
 		},
-		[intermediate.reset]: (
-			state,
-			{
-				meta: {
-					arg: { resourceId },
-				},
-			}
-		) => {
-			const [node, key] = getNode(state, resourceId);
+		[intermediate.reset]: (state, { meta: { arg = {} } }) => {
+			const [node, key] = getNode(state, arg);
 			node[key] = {};
 		},
 	};
 
 	// Fulfilled Handler needs to be different
 	if (CRUDMode === "create") {
-		intermediate.reducers[intermediate.fulfilled] = (
-			state,
-			{
-				payload,
-				meta: {
-					arg: { metaData = {}, body = {} } = {},
-				},
-			}
-		) => {
+		intermediate.reducers[intermediate.fulfilled] = (state, { payload, meta: { arg = {} } }) => {
+			const { metaData = {}, body = {} } = arg;
 			const [node, key] = getNode(state);
 			const entity = {
 				...body,
@@ -90,24 +64,44 @@ export default (
 				fulfilled: true,
 				entity,
 			};
+			console.log("Create Entity", entity);
 			entityAdapter && entityAdapter.addOne(state, entity);
 		};
 	} else if (CRUDMode === "update") {
-		intermediate.reducers[intermediate.fulfilled] = (
-			state,
-			{
-				payload,
-				meta: {
-					arg: { resourceId, metaData = {}, body = {} } = {},
-				},
-			}
-		) => {
-			const [node, key] = getNode(state, resourceId);
+		intermediate.reducers[intermediate.fulfilled] = (state, { payload, meta: { arg = {} } }) => {
+			const [node, key] = getNode(state, arg);
+			const { metaData = {}, body = {} } = arg;
+			const id = idSelector(arg);
+			console.log(id, arg);
 			const previousObject = entityAdapter
-				? entityAdapter.getSelectors().selectById(state, resourceId)
-				: node[key];	// single value in store
+				? entityAdapter.getSelectors().selectById(state, id)
+				: node[key]; // single value in store
 			const entity = {
-				...previousObject,
+				...(previousObject || {}),
+				changes: {
+					...body,
+					...metaData,
+					...payload,
+				},
+			};
+			console.log("Update Entity", entity);
+			node[key] = {
+				fulfilled: true,
+				entity,
+			};
+			entityAdapter && entityAdapter.updateOne(state, entity);
+		};
+	} else if (CRUDMode === "upsert") {
+		console.log(intermediate.fulfilled.toString());
+		intermediate.reducers[intermediate.fulfilled] = (state, { payload, meta: { arg = {} } }) => {
+			const [node, key] = getNode(state, arg);
+			const { metaData = {}, body = {} } = arg;
+			const id = idSelector(arg);
+			const previousObject = entityAdapter
+				? entityAdapter.getSelectors().selectById(state, id)
+				: node[key]; // single value in store
+			const entity = {
+				...(previousObject || {}),
 				...body,
 				...metaData,
 				...payload,
@@ -116,32 +110,18 @@ export default (
 				fulfilled: true,
 				entity,
 			};
-			entityAdapter && entityAdapter.updateOne(state, entity);
+			entityAdapter && entityAdapter.upsertOne(state, entity);
 		};
 	} else if (CRUDMode === "remove") {
-		intermediate.reducers[intermediate.fulfilled] = (
-			state,
-			{
-				payload,
-				meta: {
-					arg: { resourceId },
-				},
-			}
-		) => {
-			const [node, key] = getNode(state, resourceId);
+		intermediate.reducers[intermediate.fulfilled] = (state, { meta: { arg = {} } }) => {
+			const [node, key] = getNode(state, arg);
 			node[key] = {
 				fulfilled: true,
-				payload,
 			};
-			entityAdapter && entityAdapter.removeOne(state, resourceId);
+			entityAdapter && entityAdapter.removeOne(state, idSelector(arg));
 		};
 	} else if (CRUDMode === "readAll") {
-		intermediate.reducers[intermediate.fulfilled] = (
-			state,
-			{
-				payload,
-			}
-		) => {
+		intermediate.reducers[intermediate.fulfilled] = (state, { payload }) => {
 			const [node, key] = getNode(state);
 			node[key] = {
 				fulfilled: true,
@@ -150,16 +130,9 @@ export default (
 			entityAdapter && entityAdapter.setAll(state, payload.entities);
 		};
 	} else if (CRUDMode === "readOne") {
-		intermediate.reducers[intermediate.fulfilled] = (
-			state,
-			{
-				payload,
-				meta: {
-					arg: { resourceId, metaData = {}, body = {} },
-				},
-			}
-		) => {
-			const [node, key] = getNode(state, resourceId);
+		intermediate.reducers[intermediate.fulfilled] = (state, { payload, meta: { arg = {} } }) => {
+			const { metaData = {}, body = {} } = arg;
+			const [node, key] = getNode(state, arg);
 			const entity = {
 				...body,
 				...metaData,
@@ -170,20 +143,19 @@ export default (
 				entity,
 			};
 			if (!entityAdapter) return;
-			state.selectedEntityId = entityAdapter.selectId(payload);
+			state.selectedEntityId = idSelector(payload);
 			entityAdapter.addOne(state, entity);
 		};
 	} else if (CRUDMode === "readHeader") {
-		intermediate.reducers[intermediate.fulfilled] = (
-			state,
-			{
-				payload,
-				meta: {
-					arg: { resourceId, metaData = {}, body = {} },
-				},
-			}
-		) => {
-			const [node, key] = getNode(state, resourceId);
+		intermediate.reducers[intermediate.fulfilled] = (state, { payload, meta: { arg = {} } }) => {
+			const [node, key] = getNode(state, arg);
+			node[key] = {
+				fulfilled: true,
+			};
+		};
+	} else { // no CRUD mode
+		intermediate.reducers[intermediate.fulfilled] = (state, { payload, meta: { arg = {} } }) => {
+			const [node, key] = getNode(state);
 			node[key] = {
 				fulfilled: true,
 			};
@@ -198,9 +170,9 @@ const asyncAction = (type) => {
 	});
 	const types = names(type);
 	return {
-		reset: createAction(types.reset, (arg, requestId, resourceId) => {
+		reset: createAction(types.reset, (arg, requestId) => {
 			return {
-				meta: { arg, requestId, resourceId },
+				meta: { arg, requestId },
 			};
 		}),
 	};
