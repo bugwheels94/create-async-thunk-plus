@@ -64,7 +64,6 @@ export default (
 				fulfilled: true,
 				entity,
 			};
-			console.log("Create Entity", entity);
 			entityAdapter && entityAdapter.addOne(state, entity);
 		};
 	} else if (CRUDMode === "update") {
@@ -72,7 +71,6 @@ export default (
 			const [node, key] = getNode(state, arg);
 			const { metaData = {}, body = {} } = arg;
 			const id = idSelector(arg);
-			console.log(id, arg);
 			const previousObject = entityAdapter
 				? entityAdapter.getSelectors().selectById(state, id)
 				: node[key]; // single value in store
@@ -84,7 +82,6 @@ export default (
 					...payload,
 				},
 			};
-			console.log("Update Entity", entity);
 			node[key] = {
 				fulfilled: true,
 				entity,
@@ -92,7 +89,6 @@ export default (
 			entityAdapter && entityAdapter.updateOne(state, entity);
 		};
 	} else if (CRUDMode === "upsert") {
-		console.log(intermediate.fulfilled.toString());
 		intermediate.reducers[intermediate.fulfilled] = (state, { payload, meta: { arg = {} } }) => {
 			const [node, key] = getNode(state, arg);
 			const { metaData = {}, body = {} } = arg;
