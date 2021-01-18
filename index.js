@@ -121,16 +121,15 @@ export default (
 			const [node, key] = getNode(state);
 			node[key] = {
 				fulfilled: true,
-				payload: payload.metaData,
+				payload: payload.entities
 			};
 			entityAdapter && entityAdapter.setAll(state, payload.entities);
 		};
 	} else if (CRUDMode === "readOne") {
 		intermediate.reducers[intermediate.fulfilled] = (state, { payload, meta: { arg = {} } }) => {
-			const { metaData = {}, body = {} } = arg;
+			const { metaData = {} } = arg;
 			const [node, key] = getNode(state, arg);
 			const entity = {
-				...body,
 				...metaData,
 				...payload,
 			};
@@ -143,7 +142,7 @@ export default (
 			entityAdapter.addOne(state, entity);
 		};
 	} else if (CRUDMode === "readHeader") {
-		intermediate.reducers[intermediate.fulfilled] = (state, { payload, meta: { arg = {} } }) => {
+		intermediate.reducers[intermediate.fulfilled] = (state, { meta: { arg = {} } }) => {
 			const [node, key] = getNode(state, arg);
 			node[key] = {
 				fulfilled: true,
@@ -151,9 +150,10 @@ export default (
 		};
 	} else { // no CRUD mode
 		intermediate.reducers[intermediate.fulfilled] = (state, { payload, meta: { arg = {} } }) => {
-			const [node, key] = getNode(state);
+			const [node, key] = getNode(state, arg);
 			node[key] = {
 				fulfilled: true,
+				payload
 			};
 		};
 	}

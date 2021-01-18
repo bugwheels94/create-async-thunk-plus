@@ -2,7 +2,7 @@
   "name": "create-async-thunk-plus",
   "version": "1.0.1",
   "description": "redux-toolkit createAsyncThunk Wrapper. It also contains reducers so no need to write reducers",
-  "main": "index.js",
+  "module": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "rm -rf dist && NODE_ENV=production babel ./index.js --out-dir dist --ignore __tests__,spec.js,test.js,__snapshots__"
@@ -19,7 +19,7 @@
   "bugs": {
     "url": "https://github.com/bugwheels94/create-async-thunk-plus/issues"
   },
-  "module": "dist/index.js",
+  "main": "dist/index.js",
   "files": [
     "dist",
     "README.md"
@@ -28,6 +28,7 @@
   "devDependencies": {
     "@babel/cli": "^7.12.8",
     "@babel/core": "^7.12.8",
+    "@babel/preset-env": "^7.12.11",
     "@reduxjs/toolkit": "^1.4.0"
   }
 }
